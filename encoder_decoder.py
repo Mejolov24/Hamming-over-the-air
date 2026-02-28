@@ -9,7 +9,7 @@ def encode_data(data : bytearray,BitSize : int):
         parity_bits_amount += 1
         encoded_data_size = BitSize + parity_bits_amount
 
-    encoded_data = [0] * encoded_data_size
+    encoded_data = [0] * (encoded_data_size + 1)
     parity_bits_position = [0] * parity_bits_amount
 
     # calculate parity bits location:
@@ -29,17 +29,29 @@ def encode_data(data : bytearray,BitSize : int):
         for i in range(1, encoded_data_size + 1): #scroll trough every data bit until we finish
             if i & p: # check if that specific parity bit matches with our parity bit
                 parity_value = parity_value ^ encoded_data[i - 1] # set the parity value to the XOR encoded data value
-        encoded_data[p - 1] = parity_value 
+        encoded_data[p - 1] = parity_value
+    
+    # this works as a variable to see if more than one error is present at decoding, if the last bit is 1 then is unpair:
+    global_parity_sum : int = 0
+    for i in range(encoded_data_size):
+        if encoded_data[i]:
+            global_parity_sum += 1
+    if global_parity_sum % 2 != 0:
+        encoded_data[encoded_data_size] = 1
+
+
     return encoded_data
 
 def decode_data(encoded_data : bytearray,BitSize : int):
-    encoded_data_size : int = len(encoded_data)
+    encoded_data_size : int = len(encoded_data) - 1
     parity_bits_amount : int = encoded_data_size - BitSize
     error_position : int = 0
-    parity_bits_position = [0] * BitSize
+    parity_bits_position = [0] * parity_bits_amount
     partially_decoded_data : bytearray = encoded_data
     decoded_data : bytearray = [0] * BitSize
+    witness_int : int = 0 # we add this to check for double errors, it stores the error position
     
+
     for i in range(parity_bits_amount):
         p = pow(2,i)
         parity_sum = 0
@@ -50,9 +62,20 @@ def decode_data(encoded_data : bytearray,BitSize : int):
         if parity_sum != 0:
             error_position += p
     
+    witness_int = error_position
+
     if error_position > 0:
         partially_decoded_data[error_position - 1] = 1 - partially_decoded_data[error_position - 1]
         
+    global_parity_sum : int = 0
+    global_parity : int = 0
+
+    for i in range(len(encoded_data)):
+        if encoded_data[i]:
+            global_parity_sum += 1
+    if global_parity_sum % 2 != 0:
+        global_parity = 1
+
     for i in range(parity_bits_amount):
         parity_bits_position[i] = pow(2,i)
     
@@ -61,5 +84,9 @@ def decode_data(encoded_data : bytearray,BitSize : int):
          if i not in parity_bits_position:
              decoded_data[i2] = partially_decoded_data[i - 1]
              i2 += 1
+    
 
-    return decoded_data
+    if global_parity == 0 and witness_int != 0:
+        return "ERROR"
+    else:
+        return decoded_data
