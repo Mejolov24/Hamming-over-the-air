@@ -1,24 +1,64 @@
-import sounddevice as sd
 import numpy as np
+import itertools
 
 
-SAMPLE_RATE = 44100
-TONES = {
-    "00": 1000,
-    "01": 1400,
-    "10": 1800,
-    "11": 2200
-}
 
-def tone(hz : int):
-    fs = SAMPLE_RATE
-    t = np.linspace(0, 1, fs)
-    tone = 0.5 * np.sin(2 * np.pi * hz * t)
+#data transfer configuration
+BAUDRATE : int = 300 # tones per second
+BIT_RES : int = 8 # bit resolution
+BPT : int = 2 # bits per tone
+TS : int = 500 # tone spacing
+TONES : dict # each tone in hz, stored in a dictionary so we can look up the specific bits for example : [01] = 600  [00] = 650 
 
-    sd.play(tone, samplerate=fs, device=selected_device)
-    sd.wait()
+# Header configuration
+HST : int = 350 # header start tone
+HD_BAUD : int = 300
+HD_BIT_RES : int = 8
+HD_BPT : int = 2
+HD_TS : int = 500
+HD_TONES : dict
 
-def encode_audio(data : bytearray ,chunk_size):
+
+
+
+
+
+def set_header_config(baud : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500, hst : int = 350):
+    HD_BAUD = baud
+    HD_BIT_RES = bitres
+    HD_BPT = bpt
+    HD_TS = ts 
+    HST = hst
+
+def set_data_config(baud : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500):
+    BAUDRATE = baud
+    BIT_RES = bitres
+    BPT = bpt
+    TS = ts 
+    configuration = [BAUDRATE,BIT_RES,BPT,TS]
+    for i in range(4):
+        configuration[i] = format(configuration[i] & 0xFFFF, '016b')
+    return configuration
+
+
+def calculate_tones(eop : int,bits : int , bits_per_tone : int, interval : int): # here we define the bit tones in relatiion to BPT, TS and BIT_RES
+    stored_tones : dict = {}
+    combinations = 2**bits_per_tone
+    combinations = list(itertools.product([0,1], repeat=bits_per_tone) )
+    stored_tones["EOP"] = eop
+    stored_tones["EOD"] = eop * 2
+    for i, combo in enumerate(combinations):
+        binary_key = "".join(map(str,combo))
+        f_offset = ((i + 3) * interval)
+        stored_tones[binary_key] = f_offset
+    return stored_tones
+
+
+
+
+
+def separate_data(data : bytearray ,chunk_size):
+    data = np.array(data)
     # calculate missing space
     padding_needed = (chunk_size - (len(data) % chunk_size)) % chunk_size
 
@@ -28,25 +68,14 @@ def encode_audio(data : bytearray ,chunk_size):
 
     # Reshape into BiteSize
     packets = data.reshape(-1, chunk_size)
-    print(packets)
+    return packets
+
+def generate_tone_array(hz : int,sample_rate):
+    t = np.linspace(0, 1, sample_rate)
+    return  0.5 * np.sin(2 * np.pi * hz * t)
 
 
 
 
-devices = sd.query_devices()
-for i in range(len(devices)):
-    if  int(devices[i]['max_output_channels']) > 0:
-        print("ID = " + str(i) + " Device : " + devices[i]['name'] ) 
-
-
-selected_device = int(input("Output Device ID : "))
-
-BAUDRATE = int(input("Baudrate : "))
-BITSIZE = int(input("BitSize : "))
-BIT_DURATION = 1.0 / BAUDRATE
-encode_audio(np.array([0] * 32),BITSIZE)
-
-tone(500)
-tone(600)
 
 
