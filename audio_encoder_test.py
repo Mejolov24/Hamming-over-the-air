@@ -2,10 +2,32 @@ import audio_encoder
 import sounddevice as sd
 import encoder_decoder
 import os
+import numpy as np
+import time
+from tone_generator import AudioEncoder
 sound_data = [] # represented in hz
 
-def encode_audio_packets(packets : bytearray, baud : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500, hst : int = 350):
-    pass
+def encode_audio_packets(packets : bytearray,tones : dict, bitrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500):
+    baud_rate = bitrate / bpt
+    symbol_duration = 1 / baud_rate
+
+    encoder = AudioEncoder()
+    chunks = []
+    chunks.append(encoder.generate_tone_array(audio_encoder.HST, SAMPLE_RATE,1 ))
+
+    for i in range(0,len(packets),bpt):
+        bit_chunk = packets[i : i + bpt]
+        bit_str = "".join(map(str,bit_chunk))
+        if len(bit_str) < bpt:
+            bit_str = bit_str.ljust(bpt, '0')
+        freq = tones[bit_str]
+        chunks.append(encoder.generate_tone_array(freq, SAMPLE_RATE,symbol_duration ))
+
+    encoded_audio = np.concatenate(chunks)
+    
+
+    return encoded_audio
+
 def file_to_bits(filename):
     if not os.path.exists(filename):
         print(f"Error: {filename} not found.")
@@ -58,7 +80,7 @@ raw_bits : bytearray
 #sd.wait()
 print("\n")
 
-BAUDRATE = int(input("BaudRate : "))
+BAUDRATE = int(input("BitRate : "))
 BIT_RES = int(input("Bit resolution : "))
 BPT = int(input("bits per tone : "))
 TS = int(input("Tone spacing : "))
@@ -102,7 +124,13 @@ print(data)
 
 input("Press Any key to TX...")
 
-#TODO : TX
+
+
+encoded_audio = encode_audio_packets(data[0],tones,BAUDRATE,BIT_RES,BPT,TS)
+duration = len(encoded_audio) / SAMPLE_RATE
+sd.play(encoded_audio, SAMPLE_RATE, device=selected_device)
+sd.wait()
+time.sleep(duration)
 
 input("Press Any key to exit...")
 

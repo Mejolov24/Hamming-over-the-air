@@ -70,9 +70,7 @@ def separate_data(data : bytearray ,chunk_size):
     packets = data.reshape(-1, chunk_size)
     return packets
 
-def generate_tone_array(hz : int,sample_rate):
-    t = np.linspace(0, 1, sample_rate)
-    return  0.5 * np.sin(2 * np.pi * hz * t)
+
 
 
 
