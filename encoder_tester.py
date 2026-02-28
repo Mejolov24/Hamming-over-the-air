@@ -1,4 +1,4 @@
-import encoder
+import encoder_decoder
 
 text_input = input("Type Bytes sequence: ")
 
@@ -8,7 +8,7 @@ data = bytearray(bits)
 bit_size = len(data)
 
 print(f"\n--- Using {bit_size} As bit size ---")
-resultado = encoder.encode_data(data, bit_size)
+result = encoder_decoder.encode_data(data, bit_size)
 
 print("Parity Encoded Bytearray  :")
-print(list(resultado))
+print(list(result))
