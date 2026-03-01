@@ -135,6 +135,15 @@ def file_to_bits(filename):
             
     return bits_list
 
+def encode_file_to_audio(filepath : bytearray):
+    raw_bits = audio_encoder.file_to_bits(filepath)
+    separated_data = audio_encoder.separate_data(raw_bits, BIT_RES)
+    data = []
+    for packet in separated_data:
+        encoded_audio =  audio_encoder.encode_audio_packet(packet)
+        data.append(encoded_audio)
+    data = np.concatenate(data)
+    return data
 
 class SineGenerator:
     def __init__(self):

@@ -33,22 +33,10 @@ print("tones : ")
 print(audio_encoder.TONES)
 
 print("\n")
-text_input = input("Type Bytes sequence or drag file, then press enter.  ")
-if text_input.isdigit() :
-    raw_bits = [int(b) for b in text_input]
-else:
-    raw_bits = audio_encoder.file_to_bits(text_input)
 
-separated_data = audio_encoder.separate_data(raw_bits, BIT_RES)
-data = []
-for packet in separated_data:
-    encoded_audio =  audio_encoder.encode_audio_packet(packet)
-    data.append(encoded_audio)
-data = np.concatenate(data)
+text_input = input("Drag a file, then press enter.  ")
+data = audio_encoder.encode_file_to_audio(text_input)
 
-print("\n")
-print("split data  :")
-print(separated_data)
 print("\n")
 input("Press Any key to TX...")
 
