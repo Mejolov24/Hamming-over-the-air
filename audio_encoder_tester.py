@@ -20,7 +20,7 @@ BPT : int = 2 # bits per tone
 TS : int = 500 # tone spacing
 EOP : int = 400 # end of packet, used as reference for other tones calculations
 
-BAUDRATE = int(input("BitRate : "))
+BAUDRATE = int(input("Baudrate : "))
 BIT_RES = int(input("Bit resolution : "))
 BPT = int(input("bits per tone : "))
 TS = int(input("Tone spacing : "))

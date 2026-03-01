@@ -7,7 +7,7 @@ import os
 SAMPLE_RATE : int = 44100
 
 #data transfer configuration
-BITRATE : int = 300 # tones per second
+BAUDRATE : int = 300 # tones per second
 BIT_RES : int = 8 # bit resolution
 BPT : int = 2 # bits per tone
 TS : int = 500 # tone spacing
@@ -26,21 +26,21 @@ HD_TONES : dict
 
 
 
-def set_header_config(bitrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500, hst : int = 350):
-    HD_BAUD = bitrate
+def set_header_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500, hst : int = 350):
+    HD_BAUD = baudrate
     HD_BIT_RES = bitres
     HD_BPT = bpt
     HD_TS = ts 
     HST = hst
 
-def set_data_config(bitrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500,eop : int = 500):
-    global BITRATE, BIT_RES, BPT, TS, TONES
-    BITRATE = bitrate
+def set_data_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500,eop : int = 500):
+    global BAUDRATE, BIT_RES, BPT, TS, TONES
+    BAUDRATE = baudrate
     BIT_RES = bitres
     BPT = bpt
     TS = ts 
     TONES = calculate_tones(eop)
-    configuration = [BITRATE,BIT_RES,BPT,TS]
+    configuration = [BAUDRATE,BIT_RES,BPT,TS]
     for i in range(4):
         configuration[i] = format(configuration[i] & 0xFFFF, '016b')
     return configuration
@@ -78,8 +78,7 @@ def separate_data(data : bytearray ,chunk_size):
 
 def encode_audio_packet(packet : bytearray):
     packet = encoder_decoder.encode_data(packet,BIT_RES)
-    baud_rate = BITRATE / BPT
-    symbol_duration = 1 / baud_rate
+    symbol_duration = 1 / BAUDRATE
 
     encoder = SineGenerator()
     chunks = []
