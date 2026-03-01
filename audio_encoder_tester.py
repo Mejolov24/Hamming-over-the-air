@@ -1,6 +1,7 @@
 import audio_encoder
 import sounddevice as sd
 import time
+import numpy as np
 devices = sd.query_devices()
 for i in range(len(devices)):
     if  int(devices[i]['max_output_channels']) > 0:
@@ -38,21 +39,23 @@ if text_input.isdigit() :
 else:
     raw_bits = audio_encoder.file_to_bits(text_input)
 
-separated_data : dict = audio_encoder.separate_data(raw_bits, BIT_RES)
+separated_data = audio_encoder.separate_data(raw_bits, BIT_RES)
+data = []
+for packet in separated_data:
+    encoded_audio =  audio_encoder.encode_audio_packet(packet)
+    data.append(encoded_audio)
+data = np.concatenate(data)
+
 print("\n")
 print("split data  :")
 print(separated_data)
 print("\n")
-print("Encoded packets  :")
-
-
-
 input("Press Any key to TX...")
 
 
 
-encoded_audio =  audio_encoder.encode_audio_packet(separated_data[0])
-sd.play(encoded_audio, audio_encoder.SAMPLE_RATE, device=selected_device)
+
+sd.play(data, audio_encoder.SAMPLE_RATE, device=selected_device)
 sd.wait()
 
 input("Press Any key to exit...")
