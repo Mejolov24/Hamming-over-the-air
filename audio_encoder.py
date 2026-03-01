@@ -54,7 +54,7 @@ def calculate_tones(base_tone): # here we define the bit tones in relatiion to B
     stored_tones["EOD"] = base_tone * 2
     for i, combo in enumerate(combinations):
         binary_key = "".join(map(str,combo))
-        f_offset = ((i + 3) * TS)
+        f_offset = base_tone + ((i + 3) * TS)
         stored_tones[binary_key] = f_offset
     return stored_tones
 

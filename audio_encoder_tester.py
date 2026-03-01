@@ -37,11 +37,10 @@ print("\n")
 text_input = input("Drag a file, then press enter.  ")
 data = audio_encoder.encode_file_to_audio(text_input)
 
+print(f"Aproximate time in seconds : {len(data) / audio_encoder.SAMPLE_RATE}")
+
 print("\n")
 input("Press Any key to TX...")
-
-
-
 
 sd.play(data, audio_encoder.SAMPLE_RATE, device=selected_device)
 sd.wait()
