@@ -11,14 +11,18 @@ BAUDRATE : int = 300 # tones per second
 BIT_RES : int = 8 # bit resolution
 BPT : int = 2 # bits per tone
 TS : int = 500 # tone spacing
+RT : int = 0 # refrerence tone
 TONES : dict = {} # each tone in hz, stored in a dictionary so we can look up the specific bits for example : [01] = 600  [00] = 650 
+
+
 
 # Header configuration
 HST : int = 500 # header start tone
-HD_BAUD : int = 300
-HD_BIT_RES : int = 8
+HD_BAUD : int = 10
+HD_BIT_RES : int = 16
 HD_BPT : int = 2
 HD_TS : int = 500
+HD_RT : int = 600
 HD_TONES : dict = {}
 
 # Header structure:
@@ -35,22 +39,21 @@ HD_TONES : dict = {}
 
 
 def set_protocol_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500,reference_tone : int = 300):
-    global BAUDRATE, BIT_RES, BPT, TS, TONES
+    global BAUDRATE, BIT_RES, BPT, TS, TONES, HD_TONES, RT, HD_RT
     BAUDRATE = baudrate
     BIT_RES = bitres
     BPT = bpt
     TS = ts 
-    TONES = calculate_tones(reference_tone)
-    configuration = [BAUDRATE,BIT_RES,BPT,TS]
-    for i in range(4):
-        configuration[i] = format(configuration[i] & 0xFFFF, '016b')
-    return configuration
+    RT = reference_tone
+    HD_TONES = calculate_tones(HD_RT,HD_BPT)
+    TONES = calculate_tones(RT,BPT)
 
 
-def calculate_tones(base_tone): # here we define the bit tones in relatiion to BPT, TS and BIT_RES
+
+def calculate_tones(base_tone,bpt : int ): # here we define the bit tones in relatiion to BPT, TS and BIT_RES
     stored_tones : dict = {}
-    combinations = 2**BPT
-    combinations = list(itertools.product([0,1], repeat=BPT) )
+    combinations = 2**bpt
+    combinations = list(itertools.product([0,1], repeat=bpt) )
     for i, combo in enumerate(combinations):
         binary_key = "".join(map(str,combo))
         f_offset = base_tone + (i * TS)
@@ -75,17 +78,17 @@ def separate_data(data : bytearray ,chunk_size):
 
 
 
-def encode_audio_packet(packet : bytearray):
-    symbol_duration = 1 / BAUDRATE
+def encode_audio_packet(packet : bytearray,baudrate : int = BAUDRATE, bpt : int = BPT,tones : dict = {} ):
+    symbol_duration = 1 / baudrate
 
     chunks = []
 
-    for i in range(0,len(packet),BPT):
-        bit_chunk = packet[i : i + BPT]
+    for i in range(0,len(packet),bpt):
+        bit_chunk = packet[i : i + bpt]
         bit_str = "".join(map(str,bit_chunk))
-        if len(bit_str) < BPT:
-            bit_str = bit_str.ljust(BPT, '0')
-        freq = TONES[bit_str]
+        if len(bit_str) < bpt:
+            bit_str = bit_str.ljust(bpt, '0')
+        freq = tones[bit_str]
         chunks.append(generate_tone_array(freq, SAMPLE_RATE,symbol_duration ))
 
     encoded_audio = np.concatenate(chunks)
@@ -155,6 +158,32 @@ def interleave(blocks, depth):
 
     return np.array(output)
 
+def int_to_bits(value, bit_count):
+    return [(value >> i) & 1 for i in reversed(range(bit_count))]
+
+def create_header():
+    configuration = [BAUDRATE,BIT_RES,BPT,TS]
+    for i in range(4):
+        configuration[i] = int_to_bits(configuration[i],16)
+    
+    raw_bits = []
+
+    for field in configuration:
+        raw_bits.extend(field)
+    separated_data = audio_encoder.separate_data(raw_bits, HD_BIT_RES)
+
+    encoded_blocks = []
+
+    for block in separated_data:
+        encoded = encoder_decoder.encode_data(block,HD_BIT_RES)
+        encoded_blocks.append(encoded)
+    
+    fused_data = np.concatenate(encoded_blocks)
+
+    interleaved_data = interleave(fused_data,16)
+
+    return interleaved_data
+
 def encode_file_to_audio(filepath : bytearray):
     raw_bits = audio_encoder.file_to_bits(filepath)
     separated_data = audio_encoder.separate_data(raw_bits, BIT_RES)
@@ -169,9 +198,13 @@ def encode_file_to_audio(filepath : bytearray):
 
     interleaved_data = interleave(fused_data,16)
 
-    audio_data = encode_audio_packet(interleaved_data)
+    header_start_tone = generate_tone_array(HST,SAMPLE_RATE,1.2)
+    header_audio = encode_audio_packet(create_header(),HD_BAUD,HD_BPT,HD_TONES)
+    reference_tone = generate_tone_array(HST,SAMPLE_RATE,1.2)
+    data_audio = encode_audio_packet(interleaved_data,BAUDRATE,BPT,TONES)
+    final_audio = np.concatenate([header_start_tone, header_audio, reference_tone , data_audio])
 
-    return audio_data
+    return final_audio
 
 import numpy as np
 
