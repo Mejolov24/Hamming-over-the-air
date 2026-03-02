@@ -1,5 +1,5 @@
 # Hamming over the air
-protocol to transefer digital data of any type using Highly CPFSK modulation, specifically designed to be used in ham radio.
+protocol to transefer digital data of any type using Highly CPFSK modulation and SEC-DED error correction, specifically designed to be used in ham radio.
 
 ## Protocol information :
 
