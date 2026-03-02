@@ -3,6 +3,8 @@ import encoder_decoder
 import numpy as np
 import itertools
 import os
+import zlib
+import struct
 
 SAMPLE_RATE : int = 44100
 
@@ -15,6 +17,7 @@ RT : int = 0 # refrerence tone
 TONES : dict = {} # each tone in hz, stored in a dictionary so we can look up the specific bits for example : [01] = 600  [00] = 650 
 
 
+METADATA : bytearray = []
 
 # Header configuration
 HST : int = 500 # header start tone
@@ -96,40 +99,55 @@ def encode_audio_packet(packet : bytearray,baudrate : int = BAUDRATE, bpt : int 
 
     return encoded_audio
 
-def file_to_bits(filename):
+def file_to_bits(filepath):
+    global METADATA
 
-    filename = filename.strip()
-    if filename.startswith("&"):
-        filename = filename[1:].strip()
+    filepath = filepath.strip()
+    if filepath.startswith("&"):
+        filepath = filepath[1:].strip()
     
     # 2. Remove single or double quotes
-    filename = filename.strip("'").strip('"')
+    filepath = filepath.strip("'").strip('"')
 
     # 3. Normalize for Windows paths
-    filename = os.path.normpath(filename)
+    filepath = os.path.normpath(filepath)
 
-    if not os.path.exists(filename):
-        print(f"Error: {filename} not found.")
+    if not os.path.exists(filepath):
+        print(f"Error: {filepath} not found.")
         return []
-
-    bits_list = []
     
-    # "rb" stands for Read Binary - essential for non-text files
-    with open(filename, "rb") as f:
-        byte = f.read(1)
-        while byte:
-            # 1. Convert byte to integer
-            byte_val = int.from_bytes(byte, byteorder='big')
-            
-            # 2. Convert to binary string, padded to 8 characters with zeros
-            # '08b' means: 0-padded, 8-characters wide, binary format
+    bits_list : bytearray = []
+
+    with open(filepath, "rb") as f:
+        data = f.read()  # read entire file at once
+        for byte_val in data:
             binary_str = format(byte_val, '08b')
-            
-            # 3. Add each bit as an integer to our list
-            for bit in binary_str:
-                bits_list.append(int(bit))
-                
-            byte = f.read(1)
+            bits_list.extend(int(bit) for bit in binary_str)
+        
+    # CRC32
+    crc = zlib.crc32(data) & 0xffffffff
+    crc_bytes = crc.to_bytes(4, "big")  # 4 bytes
+    crc_bits = bytes_to_bits(crc_bytes)
+
+    # File size
+    file_size = len(data)
+    file_size_bytes = file_size.to_bytes(4, "big")  # 4 bytes
+    file_size_bits = bytes_to_bits(file_size_bytes)
+
+    # Filename
+    FILENAME_SIZE = 32
+    filename = os.path.basename(filepath)
+    filename_bytes = filename.encode("utf-8")
+    if len(filename_bytes) > FILENAME_SIZE:
+        raise ValueError("Filename too long")
+    filename_bytes = filename_bytes.ljust(FILENAME_SIZE, b'\x00')
+    filename_bits = bytes_to_bits(filename_bytes)
+
+    
+    METADATA.extend(crc_bits)
+    METADATA.extend(file_size_bits)
+    METADATA.extend(filename_bits)
+    
             
     return bits_list
 
@@ -161,10 +179,20 @@ def interleave(blocks, depth):
 def int_to_bits(value, bit_count):
     return [(value >> i) & 1 for i in reversed(range(bit_count))]
 
+def bytes_to_bits(data_bytes):
+    """Convert a bytes object to a list of bits"""
+    bits = []
+    for b in data_bytes:
+        bits.extend(int_to_bits(b, 8))
+    return bits
+
 def create_header():
     configuration = [BAUDRATE,BIT_RES,BPT,TS]
     for i in range(4):
         configuration[i] = int_to_bits(configuration[i],16)
+    
+    configuration.append(METADATA)
+
     
     raw_bits = []
 
@@ -183,6 +211,13 @@ def create_header():
     interleaved_data = interleave(fused_data,16)
 
     return interleaved_data
+
+
+
+
+
+
+
 
 def encode_file_to_audio(filepath : bytearray):
     raw_bits = audio_encoder.file_to_bits(filepath)
