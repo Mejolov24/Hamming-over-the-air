@@ -14,32 +14,33 @@ TS : int = 500 # tone spacing
 TONES : dict = {} # each tone in hz, stored in a dictionary so we can look up the specific bits for example : [01] = 600  [00] = 650 
 
 # Header configuration
-HST : int = 350 # header start tone
+HST : int = 500 # header start tone
 HD_BAUD : int = 300
 HD_BIT_RES : int = 8
 HD_BPT : int = 2
 HD_TS : int = 500
-HD_TONES : dict
+HD_TONES : dict = {}
+
+# Header structure:
+# header tone is sent for 1.2 seconds, in the reciever side its only marked as header if it lasts more than 0.8 seconds, so the tone is free for data
+# we send configuration data on a universal and robust way for compatibility that contains this : File metadata(Name,size,checksum) and protocol config 
+# we send data in selected configuration
+# we send the reference tone, also 0.8 threshold and 1.2 duration
+# end of data tone, also 0.8 threshold and 1.2 duration
+# 
+#
 
 
 
 
 
-
-def set_header_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500, hst : int = 350):
-    HD_BAUD = baudrate
-    HD_BIT_RES = bitres
-    HD_BPT = bpt
-    HD_TS = ts 
-    HST = hst
-
-def set_data_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500,eop : int = 500):
+def set_protocol_config(baudrate : int = 300, bitres : int = 8, bpt : int = 2, ts : int = 500,reference_tone : int = 300):
     global BAUDRATE, BIT_RES, BPT, TS, TONES
     BAUDRATE = baudrate
     BIT_RES = bitres
     BPT = bpt
     TS = ts 
-    TONES = calculate_tones(eop)
+    TONES = calculate_tones(reference_tone)
     configuration = [BAUDRATE,BIT_RES,BPT,TS]
     for i in range(4):
         configuration[i] = format(configuration[i] & 0xFFFF, '016b')
@@ -50,11 +51,9 @@ def calculate_tones(base_tone): # here we define the bit tones in relatiion to B
     stored_tones : dict = {}
     combinations = 2**BPT
     combinations = list(itertools.product([0,1], repeat=BPT) )
-    stored_tones["EOP"] = base_tone
-    stored_tones["EOD"] = base_tone * 2
     for i, combo in enumerate(combinations):
         binary_key = "".join(map(str,combo))
-        f_offset = base_tone + ((i + 3) * TS)
+        f_offset = base_tone + (i * TS)
         stored_tones[binary_key] = f_offset
     return stored_tones
 
@@ -77,10 +76,8 @@ def separate_data(data : bytearray ,chunk_size):
 
 
 def encode_audio_packet(packet : bytearray):
-    packet = encoder_decoder.encode_data(packet,BIT_RES)
     symbol_duration = 1 / BAUDRATE
 
-    encoder = SineGenerator()
     chunks = []
 
     for i in range(0,len(packet),BPT):
@@ -89,9 +86,8 @@ def encode_audio_packet(packet : bytearray):
         if len(bit_str) < BPT:
             bit_str = bit_str.ljust(BPT, '0')
         freq = TONES[bit_str]
-        chunks.append(encoder.generate_tone_array(freq, SAMPLE_RATE,symbol_duration ))
+        chunks.append(generate_tone_array(freq, SAMPLE_RATE,symbol_duration ))
 
-    chunks.append(encoder.generate_tone_array(TONES["EOP"] , SAMPLE_RATE, symbol_duration ))
     encoded_audio = np.concatenate(chunks)
     
 
@@ -134,39 +130,83 @@ def file_to_bits(filename):
             
     return bits_list
 
+def interleave(blocks, depth):
+    blocks = np.array(blocks)
+
+    total_blocks = len(blocks)
+
+    # Only interleave in groups of `depth`
+    output = []
+
+    for start in range(0, total_blocks, depth):
+        group = blocks[start:start+depth]
+
+        # If last group is smaller than depth, just append it unchanged
+        if len(group) < depth:
+            output.extend(group)
+            break
+
+        # Transpose (this is the interleave step)
+        transposed = group.T
+
+        # Rebuild blocks row-wise again
+        for row in transposed:
+            output.append(row)
+
+    return np.array(output)
+
 def encode_file_to_audio(filepath : bytearray):
     raw_bits = audio_encoder.file_to_bits(filepath)
     separated_data = audio_encoder.separate_data(raw_bits, BIT_RES)
-    data = []
-    for packet in separated_data:
-        encoded_audio =  audio_encoder.encode_audio_packet(packet)
-        data.append(encoded_audio)
-    data = np.concatenate(data)
-    return data
 
-class SineGenerator:
-    def __init__(self):
-        self.current_phase = 0.0
+    encoded_blocks = []
 
-    def generate_tone_array(self, hz: int, sample_rate: int, duration_ms: int = 100):
-        duration_sec = duration_ms #/ 1000.0
-        num_samples = int(sample_rate * duration_sec)
+    for block in separated_data:
+        encoded = encoder_decoder.encode_data(block,BIT_RES)
+        encoded_blocks.append(encoded)
+    
+    fused_data = np.concatenate(encoded_blocks)
+
+    interleaved_data = interleave(fused_data,16)
+
+    audio_data = encode_audio_packet(interleaved_data)
+
+    return audio_data
+
+import numpy as np
+
+CURRENT_PHASE = 0.0
+
+def generate_tone_array(hz: int, sample_rate: int, duration_sec: float):
+    global CURRENT_PHASE
+    
+    num_samples = int(sample_rate * duration_sec)
+    if num_samples <= 0:
+        return np.array([], dtype=np.float32)
+    
+    # 1. Calculate phase steps
+    phase_step = 2 * np.pi * hz / sample_rate
+    indices = np.arange(num_samples)
+    
+    # 2. Generate phases starting from the global offset
+    phases = CURRENT_PHASE + (indices * phase_step)
+    tone = 0.5 * np.sin(phases)
+    
+    # 3. Smooth the transitions (Windowing)
+    # Applying a tiny 1-2ms fade at the start and end of every symbol
+    # This prevents the "slope change" click.
+    if num_samples > 200: # only if the symbol is long enough
+        fade_len = int(sample_rate * 0.002) # 2ms fade
+        fade_in = np.linspace(0, 1, fade_len)
+        fade_out = np.linspace(1, 0, fade_len)
         
-        # 1. Calculate how much the phase moves per sample for this frequency
-        # Phase increment = 2 * pi * frequency / sample_rate
-        phase_step = 2 * np.pi * hz / sample_rate
-        
-        # 2. Create an array of phase steps
-        phases = self.current_phase + np.arange(num_samples) * phase_step
-        
-        # 3. Generate the sine wave
-        tone = 0.5 * np.sin(phases)
-        
-        # 4. Update the stored phase for the NEXT chunk
-        # We use modulo 2*pi to keep the number from growing toward infinity
-        self.current_phase = (phases[-1] + phase_step) % (2 * np.pi)
-        
-        return tone.astype(np.float32)
+        tone[:fade_len] *= fade_in
+        tone[-fade_len:] *= fade_out
+
+    # 4. Update the global variable for the next call
+    CURRENT_PHASE = (phases[-1] + phase_step) % (2 * np.pi)
+    
+    return tone.astype(np.float32)
 
 
 
